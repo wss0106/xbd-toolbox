@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>图片转 PPT · 项目管理</title>
+<link rel="stylesheet" href="../../assets/site.css">
+<script src="storage.js"></script>
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <div class="brand"><span class="logo">P</span>PhotoKit</div>
+  <div class="nav"><a href="../../index.html">首页</a><a href="index.html">图片转 PPT</a></div>
+</div></div>
+
+<div class="wrap">
+  <div class="crumb"><a href="../../index.html">首页</a> / 图片转 PPT</div>
+
+  <div class="page-head">
+    <div>
+      <h1>图片转 PPT</h1>
+      <p>每个项目独立保存，随时打开继续编辑——图片、版式、导出的 PPT 都在自己的文件包里。</p>
+    </div>
+    <div class="gen-row">
+      <button class="btn btn-ghost" id="migrateBtn" title="从旧版网页工具迁移已有作品">迁移旧作品</button>
+      <button class="btn btn-ghost" id="importBtn">导入项目包</button>
+      <button class="btn btn-primary" id="newBtn">＋ 新建项目</button>
+    </div>
+    <input type="file" id="importFile" accept=".zip,application/zip" style="display:none">
+  </div>
+
+  <div id="migrateTip" class="card" style="display:none;background:var(--amber-soft)">
+    <div id="migrateText">检测到旧版本作品，正在迁移…</div>
+  </div>
+
+  <div class="project-grid" id="projectGrid"></div>
+  <div class="empty" id="emptyBox" style="display:none">
+    <div class="big">还没有项目</div>
+    <div>点右上角「＋ 新建项目」开始，或从旧版本迁移已有作品。</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-mask" id="modalMask">
+  <div class="modal">
+    <h3 id="modalTitle">标题</h3>
+    <p id="modalDesc">说明</p>
+    <input type="text" id="modalInput" style="display:none">
+    <div class="modal-btns">
+      <button class="btn btn-ghost" id="modalCancel">取消</button>
+      <button class="btn btn-primary" id="modalOk">确定</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var $ = function(id){ return document.getElementById(id); };
+
+  function toast(msg){
+    var t=$('toast'); t.textContent=msg; t.classList.add('show');
+    setTimeout(function(){ t.classList.remove('show'); },2200);
+  }
+
+  // ---- 自定义对话框（替代原生 prompt/confirm，兼容内嵌浏览器）----
+  function dialog(opt){
+    return new Promise(function(resolve){
+      var mask=$('modalMask'), input=$('modalInput');
+      $('modalTitle').textContent=opt.title||'';
+      $('modalDesc').textContent=opt.desc||'';
+      input.style.display=opt.input?'block':'none';
+      input.value=opt.value||'';
+      $('modalOk').textContent=opt.okText||'确定';
+      mask.classList.add('show');
+      function close(val){
+        mask.classList.remove('show');
+        $('modalOk').onclick=null; $('modalCancel').onclick=null;
+        mask.onclick=null; document.onkeydown=null;
+        resolve(val);
+      }
+      $('modalOk').onclick=function(){ close(opt.input?input.value:true); };
+      $('modalCancel').onclick=function(){ close(null); };
+      mask.onclick=function(e){ if(e.target===mask) close(null); };
+      document.onkeydown=function(e){
+        if(e.key==='Enter'){ close(opt.input?input.value:true); }
+        else if(e.key==='Escape'){ close(null); }
+      };
+      if(opt.input) setTimeout(function(){ input.focus(); input.select(); },50);
+    });
+  }
+  function fmtDate(ts){
+    if(!ts) return '';
+    var d=new Date(ts);
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+
+      ' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  }
+  function coverUrl(p){
+    return '../../api/project/cover?id='+encodeURIComponent(p.id)+'&t='+(p.updatedAt||0);
+  }
+
+  function render(projects){
+    var grid=$('projectGrid'); grid.innerHTML='';
+    $('emptyBox').style.display=projects.length?'none':'block';
+    projects.forEach(function(p){
+      var card=document.createElement('div'); card.className='proj-card';
+      var cover=document.createElement('img'); cover.className='proj-cover'+(p.hasCover?'':' empty');
+      if(p.hasCover){ cover.src=coverUrl(p); cover.alt=p.name; }
+      else { cover.textContent='暂无封面'; }
+      var body=document.createElement('div'); body.className='proj-body';
+      var h=document.createElement('h3'); h.textContent=p.name;
+      var meta=document.createElement('div'); meta.className='proj-meta';
+      meta.textContent=p.imageCount+' 张图片 · '+fmtDate(p.updatedAt);
+      if(p.exportFile){
+        var ef=document.createElement('div'); ef.className='proj-meta';
+        ef.style.color='var(--accent)';
+        ef.textContent='PPT：'+p.exportFile;
+        meta.appendChild(document.createElement('br')); meta.appendChild(ef);
+      }
+      var acts=document.createElement('div'); acts.className='proj-actions';
+      var bOpen=document.createElement('button'); bOpen.textContent='打开';
+      bOpen.onclick=function(e){e.stopPropagation();location.href='editor.html?id='+encodeURIComponent(p.id);};
+      var bRen=document.createElement('button'); bRen.textContent='重命名';
+      bRen.onclick=function(e){
+        e.stopPropagation();
+        dialog({title:'重命名项目',desc:'输入新的项目名称：',input:true,value:p.name,okText:'保存'}).then(function(name){
+          if(!name||!name.trim()) return;
+          ProjectStorage.rename(p.id,name.trim()).then(function(){load();toast('已重命名');}).catch(function(err){toast('失败：'+err.message);});
+        });
+      };
+      var bDl=document.createElement('button'); bDl.textContent='备份';
+      bDl.title='导出整个项目包 zip';
+      bDl.onclick=function(e){e.stopPropagation();ProjectStorage.exportZip(p.id);};
+      var bPpt=null, bFolder=null;
+      if(p.exportFile){
+        bPpt=document.createElement('button'); bPpt.textContent='下载PPT';
+        bPpt.onclick=function(e){e.stopPropagation();location.href='../../api/export/download?id='+encodeURIComponent(p.id);};
+        bFolder=document.createElement('button'); bFolder.textContent='📂文件夹';
+        bFolder.onclick=function(e){
+          e.stopPropagation();
+          ProjectStorage.reveal(p.id).catch(function(err){toast('打开失败：'+err.message);});
+        };
+      }
+      var bDel=document.createElement('button'); bDel.className='danger'; bDel.textContent='删除';
+      bDel.onclick=function(e){
+        e.stopPropagation();
+        dialog({title:'删除项目',desc:'确定删除「'+p.name+'」及其文件包吗？此操作不可恢复。',okText:'删除'}).then(function(ok){
+          if(!ok) return;
+          ProjectStorage.remove(p.id).then(function(){load();toast('已删除');}).catch(function(err){toast('失败：'+err.message);});
+        });
+      };
+      acts.appendChild(bOpen); acts.appendChild(bRen);
+      if(bPpt) acts.appendChild(bPpt);
+      if(bFolder) acts.appendChild(bFolder);
+      acts.appendChild(bDl); acts.appendChild(bDel);
+      body.appendChild(h); body.appendChild(meta); body.appendChild(acts);
+      card.appendChild(cover); card.appendChild(body);
+      card.onclick=function(){ location.href='editor.html?id='+encodeURIComponent(p.id); };
+      grid.appendChild(card);
+    });
+  }
+
+  function load(){
+    ProjectStorage.list().then(render).catch(function(e){ toast('加载失败：'+e.message); });
+  }
+
+  // 新建
+  $('newBtn').addEventListener('click',function(){
+    dialog({title:'新建项目',desc:'给项目起个名字：',input:true,value:'未命名项目',okText:'创建'}).then(function(name){
+      if(!name||!name.trim()) return;
+      ProjectStorage.create(name.trim(),{
+        ratio:'3:4',perPage:'6',cols:'3',fit:'contain',bg:'F7F8F3',title:'',pageNum:false,
+        noteMode:'none',noteHeight:'1.1'
+      }).then(function(p){
+        location.href='editor.html?id='+encodeURIComponent(p.id);
+      }).catch(function(e){ toast('新建失败：'+e.message); });
+    });
+  });
+
+  // 导入
+  $('importBtn').addEventListener('click',function(){ $('importFile').click(); });
+  $('importFile').addEventListener('change',function(e){
+    var f=e.target.files[0]; e.target.value='';
+    if(!f) return;
+    ProjectStorage.importZip(f).then(function(){ load(); toast('项目已导入'); })
+      .catch(function(err){ toast('导入失败：'+err.message); });
+  });
+
+  // ---- 旧数据迁移（自动检测 + 手动触发）----
+  var MIGRATE_KEY='img2ppt_migrated_v2';
+  function readOldWorks(cb){
+    if(!window.indexedDB){ cb([]); return; }
+    var req;
+    try{ req=indexedDB.open('img2ppt_works',1); }catch(e){ cb([]); return; }
+    req.onsuccess=function(){
+      var db=req.result;
+      if(!db.objectStoreNames.contains('works')){ cb([]); return; }
+      var g=db.transaction('works','readonly').objectStore('works').getAll();
+      g.onsuccess=function(){ cb(g.result||[]); };
+      g.onerror=function(){ cb([]); };
+    };
+    req.onerror=function(){ cb([]); };
+  }
+  function migrate(works){
+    if(!works.length){ toast('没有找到旧作品'); return; }
+    var tip=$('migrateTip'), text=$('migrateText');
+    tip.style.display='block';
+    // 先读现有项目，避免重复迁移产生副本
+    ProjectStorage.list().then(function(existing){
+      var i=0, done=0, skipped=0;
+      function next(){
+        if(i>=works.length){
+          text.textContent='✓ 迁移完成：新增 '+done+' 个'+(skipped?('，跳过 '+skipped+' 个已存在'):'')+'。';
+          localStorage.setItem(MIGRATE_KEY,'1');
+          setTimeout(function(){tip.style.display='none';},3500);
+          load();
+          return;
+        }
+        var w=works[i++];
+        var wname=(w.name||'旧作品');
+        var wcount=(w.images||[]).length;
+        var dup=existing.some(function(p){ return p.name===wname && p.imageCount===wcount; });
+        if(dup){ skipped++; next(); return; }
+        text.textContent='正在迁移旧作品 '+i+'/'+works.length+'：'+wname+'…';
+        ProjectStorage.create(wname,w.settings||{}).then(function(p){
+          existing.push({name:wname,imageCount:wcount});
+          return ProjectStorage.save(p.id,wname,w.settings||{},w.images||[]);
+        }).then(function(){ done++; next(); })
+          .catch(function(){ next(); });
+      }
+      next();
+    }).catch(function(){
+      text.textContent='迁移失败：无法读取现有项目';
+    });
+  }
+  $('migrateBtn').addEventListener('click',function(){
+    readOldWorks(function(works){ migrate(works); });
+  });
+  // 首次自动检测：有旧作品才迁移，无则仅打标记
+  (function autoMigrate(){
+    try{ if(localStorage.getItem(MIGRATE_KEY)) return; }catch(e){ return; }
+    readOldWorks(function(works){
+      if(works.length) migrate(works);
+      else { try{ localStorage.setItem(MIGRATE_KEY,'1'); }catch(e){} }
+    });
+  })();
+
+  load();
+})();
+</script>
+</body>
+</html>

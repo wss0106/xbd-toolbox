@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>编辑项目 · 图片转 PPT</title>
+<link rel="stylesheet" href="../../assets/site.css">
+<script src="vendor/pptxgen.bundle.js"></script>
+<script src="storage.js"></script>
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <div class="brand"><span class="logo">P</span>PhotoKit</div>
+  <div class="nav">
+    <a href="../../index.html">首页</a>
+    <a href="index.html">图片转 PPT</a>
+  </div>
+</div></div>
+
+<div class="wrap">
+  <div class="crumb"><a href="index.html">图片转 PPT</a> / 编辑项目</div>
+
+  <div class="page-head">
+    <div>
+      <input class="proj-name-input" id="projName" value="加载中…" title="点击修改项目名">
+      <p><span class="saveflag" id="saveFlag">正在打开项目…</span></p>
+    </div>
+    <button class="btn btn-ghost" onclick="location.href='index.html'">← 返回项目列表</button>
+  </div>
+
+  <!-- 抓图（本地版） -->
+  <div class="card">
+    <h2><span class="num">1</span>从小红书链接抓图</h2>
+    <div class="fetch-row">
+      <input type="text" id="xhsUrl" placeholder="粘贴小红书笔记链接，例如 https://www.xiaohongshu.com/explore/...">
+      <button class="btn btn-primary" id="fetchBtn">抓取图片</button>
+      <button class="btn btn-ghost" id="ruleManageBtn" style="white-space:nowrap">⚙ 抓取规则</button>
+    </div>
+    <div class="hint">抓取的图片会追加到当前项目。规则失效时可点「抓取规则」维护，无需改代码。</div>
+  </div>
+
+  <!-- 添加图片 -->
+  <div class="card">
+    <h2><span class="num">2</span>添加图片</h2>
+    <div class="drop" id="drop">
+      <div class="big">点击选择，或把图片拖拽到这里</div>
+      <div>支持 JPG / PNG / WEBP，可多选；图片会追加到当前项目</div>
+    </div>
+    <input type="file" id="fileInput" multiple accept="image/*" style="display:none">
+    <div class="grid" id="grid"></div>
+    <div class="empty" id="emptyTip">还没有图片，先添加几张吧</div>
+    <div class="hint" id="countTip"></div>
+  </div>
+
+  <!-- 版式设置 -->
+  <div class="card">
+    <h2><span class="num">3</span>版式设置</h2>
+    <div class="settings">
+      <div class="field theme-field"><label>四季主题（一键套用整套配色）</label>
+        <input type="hidden" id="theme" value="custom">
+        <div class="theme-swatches" id="themeSwatches"></div>
+        <div class="theme-note" id="themeNote">默认「原版」沿用旧样式；点选季节后自动换背景、标题、标注框与装饰，仍可手动改背景色微调。</div>
+      </div>
+      <div class="field"><label>画布比例</label>
+        <select id="ratio">
+          <option value="3:4">3:4 竖版（小红书）</option>
+          <option value="9:16">9:16 竖版（全屏）</option>
+          <option value="16:9">16:9 横版</option>
+          <option value="4:3">4:3 横版</option>
+        </select>
+      </div>
+      <div class="field"><label>每页图片数</label>
+        <select id="perPage">
+          <option value="1">1 张</option><option value="2">2 张</option>
+          <option value="4">4 张（2×2）</option><option value="6">6 张（3×2）</option>
+          <option value="8">8 张</option><option value="9">9 张（3×3）</option>
+        </select>
+      </div>
+      <div class="field"><label>每行张数（列）</label>
+        <select id="cols">
+          <option value="1">1 列</option><option value="2">2 列</option>
+          <option value="3">3 列</option><option value="4">4 列</option>
+        </select>
+      </div>
+      <div class="field"><label>图片填充</label>
+        <select id="fit">
+          <option value="contain">完整显示（留白）</option>
+          <option value="cover">填满裁切</option>
+        </select>
+      </div>
+      <div class="field"><label>背景色</label>
+        <input type="text" id="bg" value="F7F8F3" placeholder="6位十六进制">
+      </div>
+      <div class="field"><label>标题页文字（可选）</label>
+        <input type="text" id="title" placeholder="留空则不加标题页">
+      </div>
+      <div class="field"><label>参数模板（图片转 PPT 模板）</label>
+        <div style="display:flex;gap:8px;align-items:stretch">
+          <select id="tplSelect" style="flex:1"><option value="">加载中…</option></select>
+          <button class="btn btn-ghost" id="tplManageBtn" style="white-space:nowrap;padding:9px 12px;font-size:13px">⚙ 维护</button>
+        </div>
+        <div class="hint" style="margin-top:6px">选模板后，每张图下方预留填写框；不选则纯图片</div>
+      </div>
+      <div class="check"><input type="checkbox" id="pageNum"><label for="pageNum" style="margin:0">显示页码</label></div>
+    </div>
+  </div>
+
+  <!-- 生成 -->
+  <div class="card">
+    <h2><span class="num">4</span>生成 PPT</h2>
+    <div class="gen-row">
+      <button class="btn btn-primary" id="genBtn">生成 PPT</button>
+      <span class="status" id="status"></span>
+    </div>
+    <div class="progress" id="progress"><div id="progressBar"></div></div>
+    <div class="export-info" id="exportInfo" style="display:none"></div>
+    <div class="tip">首次生成为该项目创建专属文件（项目名_编号.pptx），再次生成直接更新同一文件，不会重复产生多个文件。文件保存在本站「导出」目录，可在项目列表页打开文件夹。</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-mask" id="tplMask">
+  <div class="modal" style="max-width:720px;max-height:86vh;overflow:auto">
+    <h3>维护参数模板</h3>
+    <p>左侧选模板，右侧编辑字段。字段会原样印进 PPT 预留框（____ 表示填空位）。</p>
+    <div style="display:flex;gap:16px;min-height:280px">
+      <div style="width:190px;flex:none;border-right:1px solid var(--line);padding-right:12px">
+        <div style="font-size:12px;color:var(--sub);margin-bottom:8px">模板列表</div>
+        <div id="tplList"></div>
+        <button class="btn btn-ghost" id="tplAdd" style="width:100%;margin-top:10px;padding:8px;font-size:13px">＋ 新建模板</button>
+      </div>
+      <div style="flex:1;min-width:0">
+        <div class="field" style="margin-bottom:12px"><label>模板名称</label>
+          <input type="text" id="tplName" placeholder="如：人像基础参数"></div>
+        <div class="field" style="margin-bottom:12px"><label>预留框高度</label>
+          <select id="tplHeight">
+            <option value="0.7">小（一行）</option>
+            <option value="1.1">中（两行）</option>
+            <option value="1.6">大（三行）</option>
+          </select></div>
+        <div style="font-size:12px;color:var(--sub);margin-bottom:6px">字段（每行印在框里一行）</div>
+        <div id="tplFields"></div>
+        <button class="btn btn-ghost" id="tplAddField" style="margin-top:8px;padding:7px 12px;font-size:13px">＋ 加一行字段</button>
+      </div>
+    </div>
+    <div class="modal-btns" style="margin-top:18px">
+      <button class="btn btn-danger" id="tplDelete" style="margin-right:auto">删除此模板</button>
+      <button class="btn btn-ghost" id="tplCancel">取消</button>
+      <button class="btn btn-primary" id="tplSave">保存模板库</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-mask" id="ruleMask">
+  <div class="modal" style="max-width:680px;max-height:86vh;overflow:auto">
+    <h3>抓取规则</h3>
+    <p>按从上到下顺序尝试，第一条抓到图的规则生效。改版失效时在这里改，不用改代码。</p>
+    <div id="ruleList"></div>
+    <button class="btn btn-ghost" id="ruleAdd" style="margin-top:10px;padding:8px 12px;font-size:13px">＋ 加一条规则</button>
+    <div class="hint" style="margin-top:12px;line-height:1.8">
+      类型说明：<b>selector</b>=CSS选择器（如 <code>.img-container img</code>，稳定推荐）；<b>url</b>=链接关键词，多个用 <code>|</code> 分隔且需全部匹配。<br>
+      每条规则可上移/下移调优先级、启停、删除。改完点保存。
+    </div>
+    <div class="modal-btns" style="margin-top:18px">
+      <button class="btn btn-ghost" id="ruleCancel">取消</button>
+      <button class="btn btn-primary" id="ruleSave">保存规则</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var $ = function(id){ return document.getElementById(id); };
+  var images = [];
+  var pid = new URLSearchParams(location.search).get('id');
+  var saveTimer = null;
+  var dirty = false;
+  var templates = {version:1,templates:[]};
+  var pendingTplId = '';
+  var editTplIndex = -1;
+  var fetchRules = {version:1,rules:[]};
+
+  // ---- 四季主题令牌 ----
+  // 每套主题定义整套配色；custom 为原版（沿用旧样式，不套装饰）
+  var THEMES = {
+    custom:{ id:'custom', name:'原版', mark:'', en:'', soft:'F2F7F0', desc:'沿用旧版配色，不加季节装饰。', bg:'F7F8F3',
+      ink:'1E3325', accent:'5C8A6B', noteText:'4A5F4F', noteBorder:'D3DED2', noteFill:'FFFFFF',
+      pageNum:'888888', deco:false },
+    spring:{ id:'spring', name:'春·樱绿', mark:'春', en:'SPRING', soft:'E7F1E5', desc:'嫩绿为底，樱花粉点缀，清新自然。', bg:'F2F7F0',
+      ink:'2F5D40', accent:'D98CA0', noteText:'3E6048', noteBorder:'C8DDC7', noteFill:'FFFFFF',
+      pageNum:'7C9B84', deco:true },
+    summer:{ id:'summer', name:'夏·海蓝', mark:'夏', en:'SUMMER', soft:'E4EFF6', desc:'浅海蓝底，暖阳金点缀，通透清爽。', bg:'F0F6FA',
+      ink:'1F5570', accent:'E0A83C', noteText:'356279', noteBorder:'C2D7E2', noteFill:'FFFFFF',
+      pageNum:'6F94A8', deco:true },
+    autumn:{ id:'autumn', name:'秋·枫红', mark:'秋', en:'AUTUMN', soft:'F6EADD', desc:'暖米为底，枫棕秋橙点缀，温润复古。', bg:'FAF4EC',
+      ink:'7A3B28', accent:'C9753A', noteText:'75503A', noteBorder:'E4CDB2', noteFill:'FFFCF7',
+      pageNum:'A98A6C', deco:true },
+    winter:{ id:'winter', name:'冬·雪蓝', mark:'冬', en:'WINTER', soft:'E7EDF3', desc:'冷雪白底，深靛蓝点缀，静谧高级。', bg:'F3F6F9',
+      ink:'2C4257', accent:'6E93B5', noteText:'455F74', noteBorder:'CCD8E2', noteFill:'FFFFFF',
+      pageNum:'8497A8', deco:true }
+  };
+  var THEME_KEYS = ['custom','spring','summer','autumn','winter'];
+
+  function getTheme(){ return THEMES[$('theme') && $('theme').value] || THEMES.custom; }
+  function hex6(c){ return /^[0-9A-Fa-f]{6}$/.test(c||'') ? c : 'FFFFFF'; }
+  function renderThemeSwatches(){
+    var box=$('themeSwatches'); if(!box) return;
+    box.innerHTML='';
+    THEME_KEYS.forEach(function(k){
+      var t=THEMES[k];
+      var d=document.createElement('div');
+      d.className='swatch'+(k===getTheme().id?' active':'');
+      d.title=t.name;
+      d.innerHTML='<div class="chip" style="background:#'+t.bg+';border-bottom:3px solid #'+t.accent+'"></div>'
+        +'<div class="nm">'+t.name+'</div>';
+      d.onclick=function(){ applyTheme(k); scheduleSave(); };
+      box.appendChild(d);
+    });
+    $('themeNote').textContent=getTheme().desc+' 选主题会覆盖背景色（仍可手动改）。';
+  }
+  function applyTheme(k){
+    if(!THEMES[k]) k='custom';
+    $('theme').value=k;
+    $('bg').value=THEMES[k].bg;
+    renderThemeSwatches();
+  }
+
+  function toast(msg){
+    var t=$('toast'); t.textContent=msg; t.classList.add('show');
+    setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+  if(!pid){ toast('缺少项目 id'); setTimeout(function(){location.href='index.html';},600); return; }
+  function flag(text){ $('saveFlag').textContent=text; }
+
+  function readSettings(){
+    return {
+      ratio:$('ratio').value, perPage:$('perPage').value, cols:$('cols').value,
+      fit:$('fit').value, bg:$('bg').value, title:$('title').value,
+      pageNum:$('pageNum').checked,
+      tplId:$('tplSelect').value,
+      theme:$('theme')?$('theme').value:'custom'
+    };
+  }
+  function applySettings(s){
+    if(!s) return;
+    if(s.theme && THEMES[s.theme]){
+      $('theme').value=s.theme;
+      // 主题背景为主；若用户曾手动改过背景色且与主题默认不同，则保留自定义值
+      $('bg').value = (s.bg && s.bg.replace('#','')!==THEMES[s.theme].bg) ? s.bg : THEMES[s.theme].bg;
+    }
+    renderThemeSwatches();
+    if(s.ratio)$('ratio').value=s.ratio;
+    if(s.perPage)$('perPage').value=s.perPage;
+    if(s.cols)$('cols').value=s.cols;
+    if(s.fit)$('fit').value=s.fit;
+    if(s.bg && (!s.theme || s.theme==='custom')) $('bg').value=s.bg;
+    $('title').value=s.title||'';
+    $('pageNum').checked=!!s.pageNum;
+    pendingTplId=s.tplId||'';
+    if($('tplSelect')) $('tplSelect').value=pendingTplId;
+  }
+  function saveNow(){
+    if(!dirty) return Promise.resolve();
+    dirty=false;
+    flag('保存中…');
+    return ProjectStorage.save(pid, $('projName').value.trim(), readSettings(), images)
+      .then(function(){
+        flag('✓ 已保存 · '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));
+      })
+      .catch(function(e){ flag('保存失败：'+e.message); });
+  }
+  function scheduleSave(){
+    dirty=true; flag('有改动，待保存…');
+    if(saveTimer) clearTimeout(saveTimer);
+    saveTimer=setTimeout(saveNow, 600);
+  }
+
+  // ---- 参数模板 ----
+  function fillTemplateSelect(){
+    var sel=$('tplSelect');
+    var keep=sel.value||pendingTplId;
+    sel.innerHTML='<option value="">不加标注（纯图片）</option>';
+    templates.templates.forEach(function(t){
+      var o=document.createElement('option'); o.value=t.id; o.textContent=t.name; sel.appendChild(o);
+    });
+    sel.value=keep||'';
+  }
+  function getSelectedTemplate(){
+    var id=$('tplSelect').value;
+    for(var i=0;i<templates.templates.length;i++) if(templates.templates[i].id===id) return templates.templates[i];
+    return null;
+  }
+  // 维护弹窗
+  function renderTplList(){
+    var box=$('tplList'); box.innerHTML='';
+    templates.templates.forEach(function(t,i){
+      var d=document.createElement('div');
+      d.className='tpl-item'+(i===editTplIndex?' active':'');
+      d.textContent=t.name; d.onclick=function(){ editTplIndex=i; renderTplList(); renderTplEditor(); };
+      box.appendChild(d);
+    });
+  }
+  function renderTplEditor(){
+    var t=templates.templates[editTplIndex];
+    if(!t){ $('tplName').value=''; $('tplFields').innerHTML=''; return; }
+    $('tplName').value=t.name;
+    $('tplHeight').value=t.height||'1.1';
+    var box=$('tplFields'); box.innerHTML='';
+    (t.fields||[]).forEach(function(f,fi){
+      var row=document.createElement('div'); row.className='tpl-field-row';
+      var inp=document.createElement('input'); inp.type='text'; inp.value=f.label||'';
+      inp.placeholder='如：光圈 f/____  快门 1/____s';
+      inp.oninput=function(){ t.fields[fi].label=inp.value; };
+      var del=document.createElement('button'); del.className='btn btn-danger'; del.textContent='×';
+      del.onclick=function(){ t.fields.splice(fi,1); renderTplEditor(); };
+      row.appendChild(inp); row.appendChild(del); box.appendChild(row);
+    });
+  }
+  $('tplManageBtn').addEventListener('click',function(){
+    editTplIndex=templates.templates.length?0:-1;
+    renderTplList(); renderTplEditor();
+    $('tplMask').classList.add('show');
+  });
+  $('tplCancel').onclick=function(){ $('tplMask').classList.remove('show'); };
+  $('tplMask').onclick=function(e){ if(e.target===$('tplMask')) $('tplMask').classList.remove('show'); };
+  $('tplAdd').onclick=function(){
+    templates.templates.push({id:'t_'+Date.now(),name:'新模板',height:'1.1',fields:[]});
+    editTplIndex=templates.templates.length-1; renderTplList(); renderTplEditor();
+  };
+  var deleteArmed=false, deleteTimer=null;
+  $('tplDelete').onclick=function(){
+    if(editTplIndex<0) return;
+    var btn=$('tplDelete');
+    if(!deleteArmed){
+      deleteArmed=true;
+      btn.textContent='再点一次确认删除';
+      deleteTimer=setTimeout(function(){ deleteArmed=false; btn.textContent='删除此模板'; },3000);
+      return;
+    }
+    clearTimeout(deleteTimer); deleteArmed=false; btn.textContent='删除此模板';
+    templates.templates.splice(editTplIndex,1);
+    editTplIndex=templates.templates.length?0:-1;
+    renderTplList(); renderTplEditor();
+  };
+  $('tplAddField').onclick=function(){
+    var t=templates.templates[editTplIndex]; if(!t) return;
+    t.fields=t.fields||[]; t.fields.push({label:'',items:[]}); renderTplEditor();
+  };
+  $('tplName').oninput=function(){
+    var t=templates.templates[editTplIndex]; if(t){ t.name=this.value; renderTplList(); }
+  };
+  $('tplHeight').onchange=function(){
+    var t=templates.templates[editTplIndex]; if(t) t.height=this.value;
+  };
+  $('tplSave').onclick=function(){
+    ProjectStorage.saveTemplates(templates).then(function(){
+      fillTemplateSelect(); $('tplMask').classList.remove('show'); toast('模板库已保存');
+    }).catch(function(e){ toast('保存失败：'+e.message); });
+  };
+
+  // ---- 抓取规则维护 ----
+  function renderRules(){
+    var box=$('ruleList'); box.innerHTML='';
+    fetchRules.rules.forEach(function(r,i){
+      var item=document.createElement('div');
+      item.className='rule-item'+(r.enabled===false?' disabled':'');
+      var head=document.createElement('div'); head.className='rule-head';
+      var name=document.createElement('input'); name.type='text'; name.value=r.name||'';
+      name.oninput=function(){ r.name=name.value; };
+      var en=document.createElement('label');
+      var enCb=document.createElement('input'); enCb.type='checkbox'; enCb.checked=r.enabled!==false;
+      enCb.onchange=function(){ r.enabled=enCb.checked; renderRules(); };
+      en.appendChild(enCb); en.appendChild(document.createTextNode('启用'));
+      head.appendChild(name); head.appendChild(en);
+      var row=document.createElement('div'); row.className='rule-row';
+      var type=document.createElement('select');
+      [['selector','CSS选择器'],['url','链接关键词']].forEach(function(p){
+        var o=document.createElement('option'); o.value=p[0]; o.textContent=p[1];
+        if((r.type||'selector')===p[0]) o.selected=true; type.appendChild(o);
+      });
+      type.onchange=function(){ r.type=type.value; };
+      var val=document.createElement('input'); val.type='text'; val.value=r.value||'';
+      val.placeholder=type.value==='selector'?'.img-container img':'关键词1|关键词2';
+      val.oninput=function(){ r.value=val.value; };
+      var up=document.createElement('button'); up.className='btn btn-ghost'; up.textContent='↑';
+      up.title='上移'; up.disabled=(i===0);
+      up.onclick=function(){ if(i>0){ var t=fetchRules.rules[i-1];fetchRules.rules[i-1]=fetchRules.rules[i];fetchRules.rules[i]=t;renderRules(); } };
+      var dn=document.createElement('button'); dn.className='btn btn-ghost'; dn.textContent='↓';
+      dn.title='下移'; dn.disabled=(i===fetchRules.rules.length-1);
+      dn.onclick=function(){ if(i<fetchRules.rules.length-1){ var t=fetchRules.rules[i+1];fetchRules.rules[i+1]=fetchRules.rules[i];fetchRules.rules[i]=t;renderRules(); } };
+      var del=document.createElement('button'); del.className='btn btn-danger'; del.textContent='×';
+      del.title='删除';
+      del.onclick=function(){
+        if(del.textContent==='×'){ del.textContent='确认?'; setTimeout(function(){ if(del.textContent==='确认?') del.textContent='×'; },3000); return; }
+        fetchRules.rules.splice(i,1); renderRules();
+      };
+      row.appendChild(type); row.appendChild(val); row.appendChild(up); row.appendChild(dn); row.appendChild(del);
+      item.appendChild(head); item.appendChild(row);
+      if(r.note){ var nt=document.createElement('div'); nt.className='rule-note'; nt.textContent=r.note; item.appendChild(nt); }
+      box.appendChild(item);
+    });
+  }
+  $('ruleManageBtn').addEventListener('click',function(){
+    renderRules(); $('ruleMask').classList.add('show');
+  });
+  $('ruleCancel').onclick=function(){ $('ruleMask').classList.remove('show'); };
+  $('ruleMask').onclick=function(e){ if(e.target===$('ruleMask')) $('ruleMask').classList.remove('show'); };
+  $('ruleAdd').onclick=function(){
+    fetchRules.rules.push({id:'r_'+Date.now(),name:'新规则',type:'selector',value:'',enabled:true,note:''});
+    renderRules();
+  };
+  $('ruleSave').onclick=function(){
+    ProjectStorage.saveFetchRules(fetchRules).then(function(){
+      $('ruleMask').classList.remove('show'); toast('抓取规则已保存');
+    }).catch(function(e){ toast('保存失败：'+e.message); });
+  };
+  // 启动时加载规则库
+  ProjectStorage.getFetchRules().then(function(d){ fetchRules=d||fetchRules; }).catch(function(){});
+
+  // ---- 打开项目 ----
+  var currentExportFile=null;
+  function revealFolder(){
+    ProjectStorage.reveal(pid).catch(function(e){ toast('打开失败：'+e.message); });
+  }
+  function renderExportInfo(head,name,path){
+    var box=$('exportInfo');
+    box.style.display='block';
+    box.innerHTML=head+'<b>'+name+'</b><br><span class="path">'+path+'</span>'
+      +'<br><button class="btn btn-ghost" id="revealBtn" style="margin-top:10px;padding:6px 14px;font-size:13px">📂 打开所在文件夹</button>';
+    $('revealBtn').onclick=revealFolder;
+  }
+  function showExportInfo(name,path,isNew){
+    renderExportInfo((isNew?'🆕 已创建新文件：':'🔄 已更新旧文件：'),name,path);
+  }
+  ProjectStorage.getTemplates().then(function(data){
+    templates=data||{version:1,templates:[]};
+    fillTemplateSelect();
+    return ProjectStorage.open(pid);
+  }).then(function(p){
+    $('projName').value=p.name;
+    images=p.images||[];
+    applySettings(p.settings);
+    $('tplSelect').value=pendingTplId||'';
+    render();
+    currentExportFile=p.exportFile||null;
+    if(p.exportFile){
+      renderExportInfo('上次导出：',p.exportFile,p.exportPath||'');
+    }
+    flag('✓ 已打开项目 · '+images.length+' 张图片');
+  }).catch(function(e){
+    flag('打开失败：'+e.message);
+  });
+  $('tplSelect').addEventListener('change',function(){
+    pendingTplId=this.value; scheduleSave();
+  });
+
+  // ---- 图片读取 ----
+  function readFile(file){
+    return new Promise(function(res,rej){
+      var r=new FileReader();
+      r.onload=function(e){ res({name:file.name,dataUrl:e.target.result}); };
+      r.onerror=rej; r.readAsDataURL(file);
+    });
+  }
+  function addFiles(fileList){
+    var files=Array.prototype.slice.call(fileList).filter(function(f){return /^image\//.test(f.type);});
+    Promise.all(files.map(readFile)).then(function(arr){
+      images=images.concat(arr); render(); scheduleSave();
+    });
+  }
+  $('fileInput').addEventListener('change',function(e){ addFiles(e.target.files); e.target.value=''; });
+  $('drop').addEventListener('click',function(){ $('fileInput').click(); });
+  ['dragenter','dragover'].forEach(function(ev){
+    $('drop').addEventListener(ev,function(e){e.preventDefault();$('drop').classList.add('over');});
+  });
+  ['dragleave','drop'].forEach(function(ev){
+    $('drop').addEventListener(ev,function(e){e.preventDefault();$('drop').classList.remove('over');});
+  });
+  $('drop').addEventListener('drop',function(e){ addFiles(e.dataTransfer.files); });
+
+  // ---- 抓图 ----
+  $('fetchBtn').addEventListener('click',function(){
+    var url=$('xhsUrl').value.trim();
+    if(!url){ toast('请先粘贴小红书笔记链接'); return; }
+    var btn=$('fetchBtn'); btn.disabled=true; btn.textContent='抓取中…';
+    $('status').textContent='正在调用本机浏览器抓取，请稍候…';
+    fetch('../../api/fetch',{
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url})
+    }).then(function(r){return r.json();}).then(function(d){
+      btn.disabled=false; btn.textContent='抓取图片';
+      if(!d.ok){ $('status').textContent='抓取失败：'+(d.error||'未知错误'); return; }
+      var add=d.images.map(function(it,i){return {name:'xhs_'+Date.now()+'_'+i+'.jpg',dataUrl:it};});
+      images=images.concat(add); render(); scheduleSave();
+      var ruleInfo=d.rule?('（命中规则：'+d.rule+'）'):'';
+      $('status').textContent='已抓取 '+add.length+' 张图片，追加到当前项目'+ruleInfo;
+    }).catch(function(err){
+      btn.disabled=false; btn.textContent='抓取图片';
+      $('status').textContent='抓取请求失败：'+err.message;
+    });
+  });
+
+  // ---- 渲染缩略图 ----
+  function render(){
+    var grid=$('grid'); grid.innerHTML='';
+    images.forEach(function(im,idx){
+      var cell=document.createElement('div'); cell.className='thumb-cell';
+      var d=document.createElement('div'); d.className='thumb';
+      var img=document.createElement('img'); img.src=im.dataUrl;
+      var del=document.createElement('div'); del.className='del'; del.textContent='×';
+      del.onclick=function(){ images.splice(idx,1); render(); scheduleSave(); };
+      var n=document.createElement('div'); n.className='idx'; n.textContent=(idx+1);
+      d.appendChild(img); d.appendChild(del); d.appendChild(n);
+      cell.appendChild(d); grid.appendChild(cell);
+    });
+    $('emptyTip').style.display=images.length?'none':'block';
+    var per=parseInt($('perPage').value,10)||1;
+    var pages=images.length?Math.ceil(images.length/per):0;
+    $('countTip').textContent=images.length?(images.length+' 张图片 → 约 '+pages+' 页'):'';
+  }
+  ['cols','perPage'].forEach(function(id){ $(id).addEventListener('change',render); });
+  ['ratio','perPage','cols','fit','bg','title','pageNum'].forEach(function(id){
+    $(id).addEventListener('change',scheduleSave);
+    $(id).addEventListener('input',scheduleSave);
+  });
+  // 手动改背景色后，高亮色卡切到"自定义背景"状态（主题仍保留，仅背景被覆盖）
+  $('bg').addEventListener('change',function(){ renderThemeSwatches(); });
+  renderThemeSwatches(); // 初次渲染（项目加载后 applySettings 会再刷新）
+  $('projName').addEventListener('input',scheduleSave);
+  window.addEventListener('beforeunload',function(){ if(dirty) saveNow(); });
+
+  // ---- 图片等比处理 ----
+  function processImage(dataUrl,cellW,cellH,fitMode){
+    return new Promise(function(res,rej){
+      var img=new Image();
+      img.onload=function(){
+        var iw=img.naturalWidth,ih=img.naturalHeight;
+        var c=document.createElement('canvas'); c.width=cellW; c.height=cellH;
+        var ctx=c.getContext('2d'); ctx.fillStyle='#FFFFFF'; ctx.fillRect(0,0,cellW,cellH);
+        if(fitMode==='cover'){
+          var s=Math.max(cellW/iw,cellH/ih),nw=iw*s,nh=ih*s;
+          ctx.drawImage(img,(cellW-nw)/2,(cellH-nh)/2,nw,nh);
+        }else{
+          var s2=Math.min(cellW/iw,cellH/ih),w=iw*s2,h=ih*s2;
+          ctx.drawImage(img,(cellW-w)/2,(cellH-h)/2,w,h);
+        }
+        res(c.toDataURL('image/jpeg',0.88));
+      };
+      img.onerror=rej; img.src=dataUrl;
+    });
+  }
+
+  // ---- 生成 PPT ----
+  $('genBtn').addEventListener('click',async function(){
+    if(!images.length){ toast('请先添加图片'); return; }
+    var btn=$('genBtn'),status=$('status'),bar=$('progress'),barIn=$('progressBar');
+    btn.disabled=true; status.textContent='准备中…'; bar.style.display='block'; barIn.style.width='0%';
+    await saveNow();
+
+    var title=$('title').value.trim();
+    status.textContent='正在处理图片…';
+
+    try{
+      var wh={'3:4':[10.8,14.4],'9:16':[10.8,19.2],'16:9':[16,9],'4:3':[14.4,10.8]}[$('ratio').value];
+      var slideW=wh[0],slideH=wh[1];
+      var cols=parseInt($('cols').value,10),per=parseInt($('perPage').value,10);
+      var rows=Math.ceil(per/cols);
+      var bgRaw=$('bg').value.trim().replace('#','');
+      if(!/^[0-9A-Fa-f]{6}$/.test(bgRaw)) bgRaw='F7F8F3';
+      var fit=$('fit').value, pageNum=$('pageNum').checked;
+      var tpl=getSelectedTemplate();
+      var noteArea=tpl?parseFloat(tpl.height||'1.1'):0;
+      var labelText=tpl?(tpl.fields||[]).map(function(f){return f.label||'';}).filter(Boolean).join('\n'):'';
+      var margin=0.45,gap=0.22;
+      var cellW=(slideW-2*margin-gap*(cols-1))/cols;
+      var cellH=(slideH-2*margin-gap*(rows-1))/rows;
+      var imgH=cellH-noteArea; // 有标注时图片区域压缩，下方留文字
+      var pxW=Math.round(cellW*96),pxH=Math.round(Math.max(imgH,1)*96);
+
+      var theme=getTheme();
+      var pptx=new PptxGenJS();
+      pptx.defineLayout({name:'CUSTOM',width:slideW,height:slideH});
+      pptx.layout='CUSTOM';
+      pptx.author='PhotoKit'; pptx.subject='图片整理'; pptx.title=title||'图片集';
+      var total=Math.ceil(images.length/per), offset=title?1:0;
+
+      // 主题装饰：顶部/底部色条、角饰（仅季节主题启用）
+      function addFrame(slide){
+        if(!theme.deco) return;
+        slide.addShape(pptx.ShapeType.rect,{x:0,y:0,w:slideW,h:0.16,
+          fill:{color:theme.accent},line:{color:theme.accent}});
+        slide.addShape(pptx.ShapeType.rect,{x:0,y:slideH-0.10,w:slideW,h:0.10,
+          fill:{color:theme.accent},line:{color:theme.accent}});
+      }
+
+      if(title){
+        var s=pptx.addSlide(); s.background={color:bgRaw};
+        if(theme.deco){
+          // 季节大字水印 + 英文标签 + 主标题
+          s.addShape(pptx.ShapeType.rect,{x:margin,y:slideH*0.30,w:slideW-2*margin,h:0.045,
+            fill:{color:theme.accent},line:{color:theme.accent}});
+          s.addShape(pptx.ShapeType.rect,{x:margin,y:slideH*0.66,w:slideW-2*margin,h:0.045,
+            fill:{color:theme.accent},line:{color:theme.accent}});
+          if(theme.mark) s.addText(theme.mark,{x:0,y:slideH*0.09,w:slideW,h:slideH*0.24,
+            fontSize:108,bold:true,color:theme.soft,align:'center',valign:'mid'});
+          if(theme.en) s.addText(theme.en,{x:margin,y:slideH*0.72,w:slideW-2*margin,h:0.5,
+            fontSize:15,bold:true,color:theme.accent,align:'center',valign:'mid',charSpacing:6});
+          s.addText(title,{x:margin,y:slideH*0.36,w:slideW-2*margin,h:slideH*0.26,
+            fontSize:40,bold:true,color:theme.ink,align:'center',valign:'mid'});
+        }else{
+          s.addText(title,{x:margin,y:slideH/2-1,w:slideW-2*margin,h:2,
+            fontSize:40,bold:true,color:theme.ink,align:'center',valign:'mid'});
+        }
+        addFrame(s);
+      }
+      for(var p=0;p<total;p++){
+        var slide=pptx.addSlide(); slide.background={color:bgRaw};
+        addFrame(slide);
+        var batch=images.slice(p*per,(p+1)*per);
+        for(var i=0;i<batch.length;i++){
+          var c=i%cols,r=Math.floor(i/cols);
+          status.textContent='处理第 '+(p+1)+'/'+total+' 页…';
+          barIn.style.width=Math.round((p+i/batch.length)/total*100)+'%';
+          var b64=await processImage(batch[i].dataUrl,pxW,pxH,fit);
+          var cx=margin+c*(cellW+gap), cy=margin+r*(cellH+gap);
+          if(theme.deco){
+            slide.addShape(pptx.ShapeType.rect,{x:cx-0.02,y:cy-0.02,w:cellW+0.04,h:imgH+0.04,
+              fill:{color:'FFFFFF'},line:{color:theme.noteBorder,pt:0.75}});
+          }
+          slide.addImage({data:b64,x:cx,y:cy,w:cellW,h:imgH});
+          if(tpl){
+            slide.addText(labelText,{
+              x:cx+0.06, y:cy+imgH+0.04, w:cellW-0.12, h:noteArea-0.08,
+              fontSize:10.5, color:theme.noteText, valign:'top',
+              lineSpacingMultiple:1.1,
+              border:{type:'solid',color:theme.noteBorder,pt:0.5},
+              fill:{color:theme.noteFill}
+            });
+          }
+        }
+        if(pageNum){
+          slide.addText((p+1)+' / '+total,{x:margin,y:slideH-margin-0.35,
+            w:slideW-2*margin,h:0.35,fontSize:12,color:theme.pageNum,align:'right'});
+        }
+      }
+      barIn.style.width='100%'; status.textContent='正在保存到导出目录…';
+      var blob=await pptx.write({outputType:'blob'});
+      // 直接存到固定导出目录：新项目建新文件，老项目覆盖旧文件
+      var res=await ProjectStorage.saveExport(pid, $('projName').value.trim()||'图片集', blob);
+      currentExportFile=res.name;
+      showExportInfo(res.name,res.path,res.isNew);
+      status.innerHTML='✅ 完成，共 '+(total+offset)+' 页。<br>文件已保存到导出目录。';
+    }catch(err){
+      status.textContent='生成失败：'+err.message;
+    }finally{
+      btn.disabled=false; bar.style.display='none';
+    }
+  });
+})();
+</script>
+</body>
+</html>

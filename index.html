@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PhotoKit</title>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <div class="brand"><span class="logo">P</span>PhotoKit</div>
+  <div class="nav"><span class="badge" id="modeBadge" style="margin:0">检测运行模式…</span></div>
+</div></div>
+
+<div class="wrap">
+  <div class="hero">
+    <h1>PhotoKit</h1>
+    <p>把常用的图片处理流程做成顺手的小工具。全部在本机/浏览器完成，图片不上传、不调用模型。</p>
+    <span class="badge" id="heroBadge">本地版 · 数据存于项目文件包</span>
+  </div>
+
+  <h2 class="sec-title">功能模块</h2>
+  <div class="mod-grid">
+    <a class="mod-card" href="modules/img2ppt/index.html">
+      <div class="ico">图</div>
+      <h3>图片转 PPT</h3>
+      <p>小红书链接抓图或本地上传，多个项目独立文件包，一键生成竖版 PPT。</p>
+      <span class="go">进入模块 →</span>
+    </a>
+    <div class="mod-card soon">
+      <div class="ico">＋</div>
+      <h3>更多功能</h3>
+      <p>后续可在此添加新模块，例如作品集排版、调色预设等。</p>
+      <span class="go">敬请期待</span>
+    </div>
+  </div>
+</div>
+
+<script>
+fetch('api/status',{cache:'no-store'})
+  .then(function(r){return r.ok?r.json():Promise.reject();})
+  .then(function(d){
+    if(d&&d.ok){
+      document.getElementById('modeBadge').textContent='本地版';
+    }else throw new Error();
+  })
+  .catch(function(){
+    document.getElementById('modeBadge').textContent='网页版';
+    document.getElementById('heroBadge').textContent='网页版 · 数据存于浏览器';
+  });
+</script>
+</body>
+</html>

@@ -4,10 +4,18 @@
 
 ## 启动
 
-双击 `启动本地版.command`，或终端运行：
+双击 `start.command` 启动项目；再次双击会自动重启。
+
+停止服务：双击 `stop.command`，或终端运行：
 
 ```bash
-python3 server.py
+./stop.command
+```
+
+也可以直接终端运行：
+
+```bash
+./start.command
 ```
 
 然后浏览器打开 `http://127.0.0.1:8765`。
@@ -57,7 +65,8 @@ PhotoKit/  （磁盘目录名仍为「摄影工具站」）
     vendor/pptxgen.bundle.js  PPT 生成库
   项目库/                     项目文件包存放
   导出/                       PPT 导出目录（项目名_编号.pptx）
-  启动本地版.command          双击启动
+  start.command               双击启动 / 再次双击重启
+  stop.command                双击停止
 ```
 
 ## 说明

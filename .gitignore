@@ -4,3 +4,5 @@ __pycache__/
 .idea/
 *.log
 .xbd-remote-check.*/
+/导出/
+/项目库/

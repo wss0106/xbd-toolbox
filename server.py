@@ -22,6 +22,7 @@ PhotoKit · 本地服务
 import base64
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -41,6 +42,40 @@ PORT = 8765
 
 SAFE_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 META = "project.json"
+
+
+def _resolve_agent_browser():
+    """定位 agent-browser：后台启动时 PATH 常缺 node 的 bin 目录，这里主动补找。"""
+    found = shutil.which("agent-browser")
+    if found:
+        return found
+    home = Path.home()
+    candidates = []
+    # workbuddy 托管的 node 版本 bin
+    nb = home / ".workbuddy" / "binaries" / "node" / "versions"
+    if nb.exists():
+        for d in sorted(nb.iterdir(), reverse=True):
+            candidates.append(d / "bin" / "agent-browser")
+    # 常见全局 / nvm 安装
+    candidates += [
+        home / ".npm-global" / "bin" / "agent-browser",
+        home / ".nvm" / "versions" / "node" / "bin" / "agent-browser",
+        Path("/usr/local/bin/agent-browser"),
+        Path("/opt/homebrew/bin/agent-browser"),
+    ]
+    for c in candidates:
+        if c.exists():
+            # 同时把该 bin 目录塞进 PATH，agent-browser 内部还要 spawn node
+            os.environ["PATH"] = str(c.parent) + os.pathsep + os.environ.get("PATH", "")
+            return str(c)
+    return "agent-browser"  # 兜底：让 subprocess 抛 FileNotFoundError，由上层转成友好提示
+
+AGENT_BROWSER = _resolve_agent_browser()
+
+
+def ab(*args):
+    """构造 agent-browser 命令：pin-tab 固定独立标签，避免 eval 连到空标签页。"""
+    return [AGENT_BROWSER, "--pin-tab", "--session", SESSION] + list(args)
 
 
 # ---------- 通用工具 ----------
@@ -121,10 +156,19 @@ def write_templates(data):
 
 
 def read_fetch_rules():
-    """读取抓图规则库；缺失或损坏则返回默认容器规则。"""
-    default = {"version": 1, "rules": [
+    """读取抓图规则库；缺失或损坏则返回一组更稳的默认规则。"""
+    default = {"version": 2, "rules": [
         {"id": "r_container", "name": "正文容器（推荐）", "type": "selector",
-         "value": ".img-container img", "enabled": True, "note": ""}]}
+         "value": ".img-container img,.note-content img,#noteContainer img",
+         "enabled": True, "note": "多个常见正文容器按逗号分隔"},
+        {"id": "r_generic", "name": "通用图片候选（兜底）", "type": "generic",
+         "value": "xhscdn|sns-webpic|sns-img|notes_pre_post|spectrum|nd_dft_wlteh",
+         "enabled": True, "note": "从页面图片中自动筛出正文大图，排除头像/图标/占位图"},
+        {"id": "r_url", "name": "图片链接关键词（备用）", "type": "url",
+         "value": "notes_pre_post|spectrum|nd_dft_wlteh|sns-webpic|sns-img|xhscdn",
+         "enabled": True, "note": "按图片 URL 关键词匹配"},
+        {"id": "r_meta", "name": "封面 Meta（最后兜底）", "type": "meta",
+         "value": "", "enabled": True, "note": "读取 og:image / twitter:image，通常只有封面"}]}
     if not FETCH_RULES_FILE.exists():
         return default
     try:
@@ -388,74 +432,160 @@ def api_import_zip(zip_bytes):
 
 # ---------- 抓图（沿用） ----------
 
-def fetch_images(url):
-    subprocess.run(["agent-browser", "close", "--session", SESSION], capture_output=True, timeout=20)
-    run(["agent-browser", "open", url, "--headed", "--session", SESSION], timeout=90)
-    run(["agent-browser", "wait", "3500", "--session", SESSION], timeout=30)
-    title = run(["agent-browser", "get", "title", "--session", SESSION], timeout=30)
-    if "安全限制" in title or "错误" in title:
-        raise RuntimeError("小红书风控拦截，请稍后重试或换网络")
-    # 正文图懒加载：滚动到底触发加载，再回顶部，重复几次直到数量稳定
-    for _ in range(3):
-        run(["agent-browser", "eval", "window.scrollTo(0,document.body.scrollHeight)", "--session", SESSION], timeout=30)
-        run(["agent-browser", "wait", "1200", "--session", SESSION], timeout=30)
-    run(["agent-browser", "eval", "window.scrollTo(0,0)", "--session", SESSION], timeout=30)
-    run(["agent-browser", "wait", "500", "--session", SESSION], timeout=30)
-    # 按规则库逐条尝试；每条规则产出候选 URL，取第一条有结果的
-    rules = [r for r in read_fetch_rules().get("rules", []) if r.get("enabled", True)]
-    uniq, hit_rule = [], ""
+IMG_COLLECT_JS = r"""
+(function(mode, val){
+  function clean(u){
+    if(!u) return '';
+    u = String(u).replace(/&amp;/g, '&').trim();
+    try { u = decodeURIComponent(u); } catch(e) {}
+    try { u = new URL(u, location.href).href; } catch(e) {}
+    return u;
+  }
+  function valid(u){
+    if(!u || u.indexOf('http') !== 0 || u.indexOf('data:') === 0) return false;
+    if(/sns-avatar|avatar|\/emoji\/|\.svg(\?|$)|icon|placeholder|loading|blank/i.test(u)) return false;
+    return true;
+  }
+  function urlsOf(img){
+    var out = [];
+    ['src','data-src','data-original','data-lazy-src','data-url','currentSrc'].forEach(function(k){
+      try {
+        var v = img.getAttribute(k);
+        if(!v && k === 'currentSrc') v = img.currentSrc;
+        if(v) out.push(v);
+      } catch(e) {}
+    });
+    try {
+      if(img.srcset) img.srcset.split(',').forEach(function(p){
+        p = p.trim(); if(p) out.push(p.split(/\s+/)[0]);
+      });
+    } catch(e) {}
+    return out.map(clean).filter(valid);
+  }
+  function bigEnough(img){
+    var w = img.naturalWidth || parseInt(img.getAttribute('width'),10) || parseInt(img.width,10) || 0;
+    var h = img.naturalHeight || parseInt(img.getAttribute('height'),10) || parseInt(img.height,10) || 0;
+    if(!w && !h) return true;
+    return Math.max(w, h) >= 120;
+  }
+  function collect(nodes){
+    var out = [];
+    Array.prototype.forEach.call(nodes || [], function(img){
+      if(!bigEnough(img)) return;
+      urlsOf(img).forEach(function(u){ out.push(u); });
+    });
+    return out;
+  }
+  function byKeywords(img, kws){
+    if(!kws.length) return true;
+    var s = urlsOf(img).join(' ');
+    return kws.some(function(k){ return s.indexOf(k) >= 0; });
+  }
+  var all = Array.prototype.slice.call(document.querySelectorAll('img'));
+  var kws = String(val || '').split('|').filter(function(k){ return k; });
+  if(mode === 'meta'){
+    var metas = document.querySelectorAll('meta[property="og:image"],meta[name="og:image"],meta[property="twitter:image"]');
+    var out = [];
+    Array.prototype.forEach.call(metas, function(m){
+      var u = clean(m.getAttribute('content') || '');
+      if(valid(u)) out.push(u);
+    });
+    return out;
+  }
+  if(mode === 'selector'){
+    var nodes = [];
+    String(val || '').split(',').forEach(function(sel){
+      sel = sel.trim(); if(!sel) return;
+      try {
+        Array.prototype.push.apply(nodes, document.querySelectorAll(sel));
+      } catch(e) {}
+    });
+    return collect(nodes);
+  }
+  if(mode === 'generic'){
+    var picked = all.filter(function(img){ return byKeywords(img, kws); });
+    return collect(picked.length ? picked : all);
+  }
+  return collect(all.filter(function(img){ return byKeywords(img, kws); }));
+})
+"""
+
+def dedupe_urls(items):
+    seen, out = set(), []
+    for u in items:
+        if isinstance(u, str) and u and u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out
+
+
+def eval_image_urls(mode, val):
+    js = IMG_COLLECT_JS + "(" + json.dumps(mode or "url") + "," + json.dumps(str(val or "")) + ");"
+    raw = run(ab("eval", js), timeout=30)
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, str):
+            parsed = json.loads(parsed)
+        return parsed if isinstance(parsed, list) else []
+    except Exception:
+        return []
+
+
+def _apply_rules(rules):
+    """按顺序跑规则，返回 (去重URL列表, 命中规则名)。"""
     for rule in rules:
-        rtype = rule.get("type", "")
-        val = rule.get("value", "")
-        if rtype == "selector":
-            # CSS 选择器：直接取匹配元素的 src
-            sel = json.dumps(val)
-            js = ("JSON.stringify(Array.from(document.querySelectorAll(" + sel + "))"
-                  ".map(function(e){return e.src||e.getAttribute('src')||''}))")
-        else:
-            # URL 关键词：| 分隔，需全部命中，排除头像和占位图
-            kws = [k for k in val.split("|") if k]
-            arr = json.dumps(kws)
-            js = ("JSON.stringify(Array.from(document.querySelectorAll('img'))"
-                  ".map(function(i){return i.src||i.getAttribute('src')||''})"
-                  ".filter(function(s){if(s.indexOf('http')!==0||s.indexOf('data:')===0)return false;"
-                  "if(s.indexOf('sns-avatar')>=0)return false;"
-                  "return " + arr + ".some(function(k){return s.indexOf(k)>=0});}))")
-        raw = run(["agent-browser", "eval", js, "--session", SESSION], timeout=30)
-        try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, str):
-                parsed = json.loads(parsed)
-            cand = parsed if isinstance(parsed, list) else []
-        except Exception:
-            cand = []
-        # 去重保序
-        seen, one = set(), []
-        for u in cand:
-            if u not in seen:
-                seen.add(u)
-                one.append(u)
-        if one:
-            uniq, hit_rule = one, rule.get("name", rule.get("id", ""))
-            break
-    if not uniq:
-        raise RuntimeError("所有抓取规则都未命中，可能是笔记为视频、需登录，或规则已失效（可在页面维护规则）")
-    out = []
-    with tempfile.TemporaryDirectory(prefix="xhs_web_") as td:
-        td = Path(td)
-        for i, u in enumerate(uniq):
-            webp = td / ("%d.webp" % i)
-            jpg = td / ("%d.jpg" % i)
-            subprocess.run(["curl", "-sL", "-o", str(webp),
-                            "-H", "Referer: https://www.xiaohongshu.com/",
-                            "-H", "User-Agent: Mozilla/5.0", u], timeout=40)
-            subprocess.run(["sips", "-s", "format", "jpeg", str(webp), "--out", str(jpg)],
-                           capture_output=True, timeout=40)
-            if jpg.exists():
-                b64 = base64.b64encode(jpg.read_bytes()).decode("ascii")
-                out.append("data:image/jpeg;base64," + b64)
-    subprocess.run(["agent-browser", "close", "--session", SESSION], capture_output=True, timeout=20)
-    return out, hit_rule, len(uniq)
+        cand = dedupe_urls(eval_image_urls(rule.get("type", "url"), rule.get("value", "")))
+        if cand:
+            return cand, rule.get("name", rule.get("id", ""))
+    return [], ""
+
+
+def fetch_images(url):
+    subprocess.run(ab("close"), capture_output=True, timeout=20)
+    try:
+        run(ab("open", url, "--headed"), timeout=90)
+        run(ab("wait", "4000"), timeout=30)
+        title = run(ab("get", "title"), timeout=30)
+        if "安全限制" in title or "website-login/error" in title:
+            raise RuntimeError("小红书风控拦截，请稍后重试或换网络/账号")
+
+        rules = [r for r in read_fetch_rules().get("rules", []) if r.get("enabled", True)]
+
+        # 第一轮：不滚动直接抓。小红书详情页正文图初始就在 DOM 里；
+        # 主动滚动会触发推荐流/虚拟列表，反而把正文图节点回收掉。
+        uniq, hit_rule = _apply_rules(rules)
+
+        # 第二轮兜底：首轮没抓到（比如真懒加载）才轻量滚动再试一次
+        if not uniq:
+            for _ in range(2):
+                run(ab("eval", "window.scrollTo(0,document.body.scrollHeight)"), timeout=30)
+                run(ab("wait", "1500"), timeout=30)
+            run(ab("eval", "window.scrollTo(0,0)"), timeout=30)
+            run(ab("wait", "800"), timeout=30)
+            uniq, hit_rule = _apply_rules(rules)
+
+        if not uniq:
+            raise RuntimeError("所有抓取规则都未命中，可能是笔记为视频、需登录，或规则已失效（可在页面维护规则）")
+
+        out = []
+        with tempfile.TemporaryDirectory(prefix="xhs_web_") as td:
+            td = Path(td)
+            for i, u in enumerate(uniq[:50]):
+                raw_file = td / ("%d.img" % i)
+                jpg = td / ("%d.jpg" % i)
+                subprocess.run(["curl", "-fsSL", "-o", str(raw_file),
+                                "-H", "Referer: https://www.xiaohongshu.com/",
+                                "-H", "User-Agent: Mozilla/5.0", u], timeout=40)
+                subprocess.run(["sips", "-s", "format", "jpeg", str(raw_file), "--out", str(jpg)],
+                               capture_output=True, timeout=40)
+                if jpg.exists():
+                    b64 = base64.b64encode(jpg.read_bytes()).decode("ascii")
+                    out.append("data:image/jpeg;base64," + b64)
+        if not out:
+            raise RuntimeError("找到 %d 个图片地址，但下载或转换失败" % len(uniq))
+        return out, hit_rule, len(uniq)
+    finally:
+        subprocess.run(ab("close"), capture_output=True, timeout=20)
 
 
 # ---------- HTTP Handler ----------
@@ -583,8 +713,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return
             if path == "/api/fetch":
                 url = body.get("url", "").strip()
-                if "xiaohongshu.com" not in url:
-                    raise ValueError("请提供小红书笔记链接")
+                if "xiaohongshu.com" not in url and "xhslink.com" not in url:
+                    raise ValueError("请提供小红书笔记链接或 xhslink 短链")
                 imgs, hit_rule, found = fetch_images(url)
                 self._json({"ok": True, "images": imgs,
                             "rule": hit_rule, "found": found})

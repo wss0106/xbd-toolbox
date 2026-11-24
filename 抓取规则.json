@@ -1,21 +1,37 @@
 {
-  "version": 1,
+  "version": 2,
   "rules": [
     {
       "id": "r_container",
       "name": "正文容器（推荐）",
       "type": "selector",
-      "value": ".img-container img",
+      "value": ".img-container img,.note-content img,#noteContainer img",
       "enabled": true,
-      "note": "小红书正文图都在 .img-container 里，稳定；自动排除头像和推荐流"
+      "note": "多个常见正文容器按逗号分隔"
+    },
+    {
+      "id": "r_generic",
+      "name": "通用图片候选（兜底）",
+      "type": "generic",
+      "value": "xhscdn|sns-webpic|sns-img|notes_pre_post|spectrum|nd_dft_wlteh",
+      "enabled": true,
+      "note": "从页面图片中自动筛出正文大图，排除头像/图标/占位图"
     },
     {
       "id": "r_url",
       "name": "图片链接关键词（备用）",
       "type": "url",
-      "value": "notes_pre_post|spectrum|nd_dft_wlteh",
+      "value": "notes_pre_post|spectrum|nd_dft_wlteh|sns-webpic|sns-img|xhscdn",
       "enabled": true,
-      "note": "按图片 URL 关键词匹配，改版后可在页面维护里更新"
+      "note": "按图片 URL 关键词匹配"
+    },
+    {
+      "id": "r_meta",
+      "name": "封面 Meta（最后兜底）",
+      "type": "meta",
+      "value": "",
+      "enabled": true,
+      "note": "读取 og:image / twitter:image，通常只有封面"
     }
   ]
 }

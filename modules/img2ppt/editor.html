@@ -376,7 +376,7 @@
       head.appendChild(name); head.appendChild(en);
       var row=document.createElement('div'); row.className='rule-row';
       var type=document.createElement('select');
-      [['selector','CSS选择器'],['url','链接关键词']].forEach(function(p){
+      [['selector','CSS选择器'],['generic','通用候选（推荐）'],['url','链接关键词'],['meta','封面 Meta']].forEach(function(p){
         var o=document.createElement('option'); o.value=p[0]; o.textContent=p[1];
         if((r.type||'selector')===p[0]) o.selected=true; type.appendChild(o);
       });
